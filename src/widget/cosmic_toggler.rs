@@ -1,17 +1,20 @@
 //! Show toggle controls using togglers.
 
-use cosmic::{iced_core::Border, iced_widget::toggler::Status};
-use iced_core::{
-    alignment, event, layout, mouse, renderer, text,
-    widget::{self, tree, Tree},
-    Clipboard, Element, Event, Layout, Length, Pixels, Rectangle, Shell, Size, Widget,
+use core::{
+    alignment, layout, mouse, renderer, text,
+    widget::{tree, Tree},
+    Element, Layout, Length, Pixels, Rectangle, Size, Widget,
+};
+use cosmic::{
+    iced::{core::Border, widget::toggler::Status},
+    // widget::pane_grid::state,
 };
 
 use crate::{
     chain, id, lerp,
-    reexports::{iced, iced_core, iced_widget},
+    reexports::{core, iced, widget},
 };
-pub use cosmic::iced_widget::toggler::{Catalog, Style};
+pub use cosmic::iced::widget::toggler::{Catalog, Style};
 
 /// A toggler widget.
 #[allow(missing_debug_implementations)]
@@ -129,6 +132,41 @@ where
         self.percent = percent;
         self
     }
+
+    fn on_event(
+        &mut self,
+        _state: &mut Tree,
+        event: &iced::Event,
+        layout: Layout<'_>,
+        cursor_position: mouse::Cursor,
+        _renderer: &Renderer,
+        _clipboard: &mut dyn core::Clipboard,
+        shell: &mut core::Shell<'_, Message>,
+        _viewport: &Rectangle,
+    ) -> iced::event::Status {
+        match event {
+            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                let mouse_over = cursor_position.is_over(layout.bounds());
+
+                if mouse_over {
+                    if self.is_toggled {
+                        let off_animation =
+                            chain::Toggler::off(self.id.clone(), self.anim_multiplier);
+                        shell.publish((self.on_toggle)(off_animation, !self.is_toggled));
+                    } else {
+                        let on_animation =
+                            chain::Toggler::on(self.id.clone(), self.anim_multiplier);
+                        shell.publish((self.on_toggle)(on_animation, !self.is_toggled));
+                    }
+
+                    iced::event::Status::Captured
+                } else {
+                    iced::event::Status::Ignored
+                }
+            }
+            _ => iced::event::Status::Ignored,
+        }
+    }
 }
 
 impl<'a, Message, Renderer> Widget<Message, cosmic::Theme, Renderer>
@@ -145,7 +183,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -159,24 +197,20 @@ where
                 if let Some(label) = self.label.as_deref() {
                     let state = tree
                         .state
-                        .downcast_mut::<iced_widget::text::State<Renderer::Paragraph>>();
-
-                    let node = iced_core::widget::text::layout(
-                        state,
-                        renderer,
-                        limits,
-                        self.width,
-                        Length::Shrink,
-                        label,
-                        self.text_line_height,
-                        self.text_size.map(iced::Pixels),
-                        self.font,
-                        self.text_alignment,
-                        alignment::Vertical::Top,
-                        self.text_shaping,
-                        text::Wrapping::default(),
-                        text::Ellipsize::default(),
-                    );
+                        .downcast_mut::<widget::text::State<Renderer::Paragraph>>();
+                    let format = core::widget::text::Format {
+                        width: self.width,
+                        height: Length::Shrink,
+                        size: self.text_size.map(iced::Pixels),
+                        font: self.font,
+                        line_height: self.text_line_height,
+                        align_x: self.text_alignment.into(),
+                        align_y: alignment::Vertical::Top,
+                        shaping: self.text_shaping,
+                        wrapping: text::Wrapping::default(),
+                        ellipsize: text::Ellipsize::default(),
+                    };
+                    let node = core::widget::text::layout(state, renderer, limits, label, format);
                     match self.width {
                         Length::Fill => {
                             let size = node.size();
@@ -188,46 +222,34 @@ where
                         _ => node,
                     }
                 } else {
-                    layout::Node::new(iced_core::Size::ZERO)
+                    layout::Node::new(core::Size::ZERO)
                 }
             },
             |_| layout::Node::new(Size::new(48., 24.)),
         )
     }
 
-    fn on_event(
+    fn update(
         &mut self,
-        _state: &mut Tree,
-        event: Event,
+        state: &mut Tree,
+        event: &iced::Event,
         layout: Layout<'_>,
         cursor_position: mouse::Cursor,
-        _renderer: &Renderer,
-        _clipboard: &mut dyn Clipboard,
-        shell: &mut Shell<'_, Message>,
-        _viewport: &Rectangle,
-    ) -> event::Status {
-        match event {
-            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                let mouse_over = cursor_position.is_over(layout.bounds());
-
-                if mouse_over {
-                    if self.is_toggled {
-                        let off_animation =
-                            chain::Toggler::off(self.id.clone(), self.anim_multiplier);
-                        shell.publish((self.on_toggle)(off_animation, !self.is_toggled));
-                    } else {
-                        let on_animation =
-                            chain::Toggler::on(self.id.clone(), self.anim_multiplier);
-                        shell.publish((self.on_toggle)(on_animation, !self.is_toggled));
-                    }
-
-                    event::Status::Captured
-                } else {
-                    event::Status::Ignored
-                }
-            }
-            _ => event::Status::Ignored,
-        }
+        renderer: &Renderer,
+        clipboard: &mut dyn core::Clipboard,
+        shell: &mut core::Shell<'_, Message>,
+        viewport: &Rectangle,
+    ) {
+        _ = self.on_event(
+            state,
+            event,
+            layout,
+            cursor_position,
+            renderer,
+            clipboard,
+            shell,
+            viewport,
+        );
     }
 
     fn mouse_interaction(
@@ -259,13 +281,13 @@ where
 
         if let Some(_label) = &self.label {
             let label_layout = children.next().unwrap();
-            let state: &iced_widget::text::State<Renderer::Paragraph> = tree.state.downcast_ref();
-            iced_widget::text::draw(
+            let state: &widget::text::State<Renderer::Paragraph> = tree.state.downcast_ref();
+            widget::text::draw(
                 renderer,
                 style,
-                label_layout,
-                state.0.raw(),
-                iced_widget::text::Style::default(),
+                label_layout.bounds(),
+                state.paragraph.raw(),
+                widget::text::Style::default(),
                 viewport,
             );
         }
@@ -362,17 +384,22 @@ fn blend_appearances(first: Style, mut other: Style, percent: f32) -> Style {
     } else if percent == 1. {
         other
     } else {
-        let first_background = first.background.into_linear();
-
-        let other_background = std::mem::take(&mut other.background).into_linear();
-
-        other.background = crate::utils::static_array_from_iter::<f32, 4>(
-            first_background
-                .iter()
-                .zip(other_background.iter())
-                .map(|(o, t)| o * (1.0 - percent) + t * percent),
-        )
-        .into();
+        other.background = match (first.background, other.background) {
+            (iced::Background::Color(first_color), iced::Background::Color(mut other_color)) => {
+                let other_background = std::mem::take(&mut other_color).into_linear();
+                iced::Background::Color(
+                    crate::utils::static_array_from_iter::<f32, 4>(
+                        first_color
+                            .into_linear()
+                            .iter()
+                            .zip(other_background.iter())
+                            .map(|(o, t)| o * (1.0 - percent) + t * percent),
+                    )
+                    .into(),
+                )
+            }
+            _ => todo!("I don't really now what to do here"),
+        };
 
         other
     }

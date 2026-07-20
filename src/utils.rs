@@ -2,7 +2,7 @@
 
 //! Utility functions for handling data in this library.
 
-use crate::reexports::iced_core::{
+use crate::reexports::core::{
     layout::{Limits, Node},
     Point, Size,
 };
